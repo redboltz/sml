@@ -830,51 +830,25 @@ template <class T, class... Ts>
 using extend_mapping_t = aux::apply_t<aux::inherit, typename extend_mapping<T, Ts...>::type>;
 template <bool, class, class...>
 struct conditional_mapping;
-template <class T1, class T2, class... Rs, class... Ts>
-struct conditional_mapping<true, aux::type<T1, aux::inherit<Rs...>>, T2, Ts...> {
-  using type = unique_mappings_impl<aux::type<aux::inherit<T1>, extend_mapping_t<T2, Rs...>>, Ts...>;
+template <class T1, class T, class... Rs, class... Ts>
+struct conditional_mapping<true, aux::type<T1, aux::inherit<Rs...>>, T, Ts...> {
+  using type = unique_mappings_impl<aux::type<aux::inherit<T1>, extend_mapping_t<T, Rs...>>, Ts...>;
 };
-template <class T1, class T2, class... Rs, class... Ts>
-struct conditional_mapping<false, aux::type<T1, aux::inherit<Rs...>>, T2, Ts...> {
+template <class T1, class T, class... Rs, class... Ts>
+struct conditional_mapping<false, aux::type<T1, aux::inherit<Rs...>>, T, Ts...> {
   using type =
-      unique_mappings_impl<aux::type<aux::inherit<T1, aux::type<typename T2::element_type>>, aux::inherit<T2, Rs...>>, Ts...>;
+      unique_mappings_impl<aux::type<aux::inherit<T1, aux::type<typename T::element_type>>, aux::inherit<T, Rs...>>, Ts...>;
 };
-template <class T1, class T2, class... Rs, class... Ts>
-struct unique_mappings_impl<aux::type<T1, aux::inherit<Rs...>>, T2, Ts...>
-    : conditional_mapping<aux::is_base_of<aux::type<typename T2::element_type>, T1>::value, aux::type<T1, aux::inherit<Rs...>>,
-                          T2, Ts...>::type {};
+template <class T1, class T, class... Rs, class... Ts>
+struct unique_mappings_impl<aux::type<T1, aux::inherit<Rs...>>, T, Ts...>
+    : conditional_mapping<aux::is_base_of<aux::type<typename T::element_type>, T1>::value, aux::type<T1, aux::inherit<Rs...>>,
+                          T, Ts...>::type {};
 template <class T1, class Rs>
 struct unique_mappings_impl<aux::type<T1, Rs>> : aux::apply_t<aux::inherit, Rs> {};
 template <class... Ts>
 struct unique_mappings : unique_mappings_impl<aux::type<aux::none_type, aux::inherit<>>, Ts...> {};
 template <class T>
 struct unique_mappings<T> : aux::inherit<T> {};
-template <class, class...>
-struct mappings;
-template <class... Ts>
-struct mappings<aux::pool<Ts...>>
-    : unique_mappings_t<
-          event_mappings<typename Ts::event, aux::inherit<state_mappings<typename Ts::src_state, aux::type_list<Ts>>>>...> {};
-template <class T>
-using mappings_t = typename mappings<T>::type;
-template <class, class TUnexpected>
-transitions<TUnexpected> get_state_mapping_impl(...);
-template <class T, class, class... Ts>
-transitions<Ts...> get_state_mapping_impl(state_mappings<T, aux::type_list<Ts...>> *);
-template <class T, class TMappings, class TUnexpected>
-struct get_state_mapping {
-  using type = decltype(get_state_mapping_impl<T, TUnexpected>((TMappings *)0));
-};
-template <class S>
-transitions_sub<S> get_sub_state_mapping_impl(...);
-template <class T, class... Ts>
-transitions_sub<T, Ts...> get_sub_state_mapping_impl(state_mappings<T, aux::type_list<Ts...>> *);
-template <class T, class TMappings, class TUnexpected>
-struct get_state_mapping<sm<T>, TMappings, TUnexpected> {
-  using type = decltype(get_sub_state_mapping_impl<sm<T>>((TMappings *)0));
-};
-template <class T, class TMappings, class TUnexpected>
-using get_state_mapping_t = typename get_state_mapping<T, TMappings, TUnexpected>::type;
 template <class>
 transitions<aux::true_type> get_event_mapping_impl(...);
 template <class T, class TMappings>
@@ -882,7 +856,7 @@ TMappings get_event_mapping_impl(event_mappings<T, TMappings> *);
 template <class T, class TMappings>
 using get_event_mapping_t = decltype(get_event_mapping_impl<T>((TMappings *)0));
 template <class, class, class>
-struct mappings2;
+struct mappings;
 template <class, class, class>
 struct remap;
 template <class TUnexpected, class, class, class>
@@ -902,13 +876,13 @@ struct remap<TUnexpected, aux::type_list<TStates...>, back::state_mappings<TStat
   using type = aux::type_list<typename get_transition<TUnexpected, TStates, TState, Ts>::type...>;
 };
 template <class TUnexpected, class... Ts, class TStates>
-struct mappings2<TUnexpected, aux::pool<Ts...>, TStates>
+struct mappings<TUnexpected, aux::pool<Ts...>, TStates>
     : back::unique_mappings_t<back::event_mappings<
           typename Ts::event, typename remap<TUnexpected, TStates, typename back::state_mappings<
                                                                        typename Ts::src_state, aux::type_list<Ts>>>::type>...> {
 };
 template <class TUnexpected, class Ts, class TStates>
-using mappings2_t = typename mappings2<TUnexpected, Ts, TStates>::type;
+using mappings_t = typename mappings<TUnexpected, Ts, TStates>::type;
 }
 namespace concepts {
 struct callable_fallback {
@@ -954,7 +928,7 @@ struct sm_impl {
   using exceptions = aux::apply_t<aux::unique_t, aux::apply_t<get_exceptions, events_t>>;
   using has_exceptions = aux::integral_constant<bool, (aux::size<exceptions>::value > 0)>;
 #endif
-  struct mappings : mappings2_t<has_unexpected_events, transitions_t, states_t> {};
+  struct mappings : mappings_t<has_unexpected_events, transitions_t, states_t> {};
   sm_impl(const aux::init &, const aux::pool_type<sm_t &> *t) : transitions_((t->value)()) {
     initialize(typename sm_impl<TSM>::initial_states_t{});
   }
@@ -1081,16 +1055,16 @@ struct sm_impl {
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, aux::false_type) noexcept {
-    return process_event_impl<TMappings>(event, deps, subs, states_t{}, aux::make_index_sequence<regions>{});
+    return process_event_impl(event, deps, subs, TMappings{}, aux::make_index_sequence<regions>{});
   }
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, state_t &current_state, aux::false_type) noexcept {
-    return process_event_impl<TMappings>(event, deps, subs, states_t{}, current_state);
+    return process_event_impl(event, deps, subs, TMappings{}, current_state);
   }
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, state_t &current_state, aux::true_type) noexcept {
     try {
-      return process_event_impl<TMappings>(event, deps, subs, states_t{}, current_state);
+      return process_event_impl(event, deps, subs, TMappings{}, current_state);
     } catch (...) {
       return process_exception(deps, subs, exceptions{});
     }
@@ -1098,7 +1072,7 @@ struct sm_impl {
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, aux::true_type) {
     try {
-      return process_event_impl<TMappings>(event, deps, subs, states_t{}, aux::make_index_sequence<regions>{});
+      return process_event_impl(event, deps, subs, TMappings{}, aux::make_index_sequence<regions>{});
     } catch (...) {
       return process_exception(deps, subs, exceptions{});
     }

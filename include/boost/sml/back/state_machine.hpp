@@ -48,7 +48,7 @@ struct sm_impl {
   using exceptions = aux::apply_t<aux::unique_t, aux::apply_t<get_exceptions, events_t>>;
   using has_exceptions = aux::integral_constant<bool, (aux::size<exceptions>::value > 0)>;
 #endif  // __pph__
-  struct mappings : mappings2_t<has_unexpected_events, transitions_t, states_t> {};
+  struct mappings : mappings_t<has_unexpected_events, transitions_t, states_t> {};
 
   sm_impl(const aux::init &, const aux::pool_type<sm_t &> *t) : transitions_((t->value)()) {
     initialize(typename sm_impl<TSM>::initial_states_t{});
@@ -193,18 +193,18 @@ struct sm_impl {
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)  // __pph__
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, aux::false_type) noexcept {
-    return process_event_impl<TMappings>(event, deps, subs, states_t{}, aux::make_index_sequence<regions>{});
+    return process_event_impl(event, deps, subs, TMappings{}, aux::make_index_sequence<regions>{});
   }
 
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, state_t &current_state, aux::false_type) noexcept {
-    return process_event_impl<TMappings>(event, deps, subs, states_t{}, current_state);
+    return process_event_impl(event, deps, subs, TMappings{}, current_state);
   }
 
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, state_t &current_state, aux::true_type) noexcept {
     try {
-      return process_event_impl<TMappings>(event, deps, subs, states_t{}, current_state);
+      return process_event_impl(event, deps, subs, TMappings{}, current_state);
     } catch (...) {
       return process_exception(deps, subs, exceptions{});
     }
@@ -213,7 +213,7 @@ struct sm_impl {
   template <class TMappings, class TEvent, class TDeps, class TSubs>
   bool process_event_noexcept(const TEvent &event, TDeps &deps, TSubs &subs, aux::true_type) {
     try {
-      return process_event_impl<TMappings>(event, deps, subs, states_t{}, aux::make_index_sequence<regions>{});
+      return process_event_impl(event, deps, subs, TMappings{}, aux::make_index_sequence<regions>{});
     } catch (...) {
       return process_exception(deps, subs, exceptions{});
     }
