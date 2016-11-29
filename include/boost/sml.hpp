@@ -171,6 +171,8 @@ using function_traits_t = typename function_traits<T>::args;
 }
 namespace aux {
 using swallow = int[];
+template <class, class U>
+using expand_t = U;
 template <int...>
 struct index_sequence {
   using type = index_sequence;
@@ -849,12 +851,12 @@ template <class... Ts>
 struct unique_mappings : unique_mappings_impl<aux::type<aux::none_type, aux::inherit<>>, Ts...> {};
 template <class T>
 struct unique_mappings<T> : aux::inherit<T> {};
-template <class>
-transitions<aux::true_type> get_event_mapping_impl(...);
-template <class T, class TMappings>
+template <class, class TDefault>
+TDefault get_event_mapping_impl(...);
+template <class T, class, class TMappings>
 TMappings get_event_mapping_impl(event_mappings<T, TMappings> *);
-template <class T, class TMappings>
-using get_event_mapping_t = decltype(get_event_mapping_impl<T>((TMappings *)0));
+template <class T, class TDefault, class TMappings>
+using get_event_mapping_t = decltype(get_event_mapping_impl<T, TDefault>((TMappings *)0));
 template <class, class, class>
 struct mappings;
 template <class, class, class>
@@ -883,6 +885,13 @@ struct mappings<TUnexpected, aux::pool<Ts...>, TStates>
 };
 template <class TUnexpected, class Ts, class TStates>
 using mappings_t = typename mappings<TUnexpected, Ts, TStates>::type;
+template <class, class>
+struct default_mappings;
+template <class TUnexpected, class... TStates>
+struct default_mappings<TUnexpected, aux::type_list<TStates...>>
+    : aux::type_list<aux::expand_t<TStates, transitions<TUnexpected>>...> {};
+template <class TUnexpected, class TStates>
+using default_mappings_t = typename default_mappings<TUnexpected, TStates>::type;
 }
 namespace concepts {
 struct callable_fallback {
@@ -929,6 +938,7 @@ struct sm_impl {
   using has_exceptions = aux::integral_constant<bool, (aux::size<exceptions>::value > 0)>;
 #endif
   struct mappings : mappings_t<has_unexpected_events, transitions_t, states_t> {};
+  struct default_mappings : default_mappings_t<has_unexpected_events, states_t> {};
   sm_impl(const aux::init &, const aux::pool_type<sm_t &> *t) : transitions_((t->value)()) {
     initialize(typename sm_impl<TSM>::initial_states_t{});
   }
@@ -940,11 +950,12 @@ struct sm_impl {
   bool process_event(const TEvent &event, TDeps &deps, TSubs &subs) {
     log_process_event<sm_t>(aux::type<logger_t>{}, deps, event);
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
-    const auto handled =
-        process_event_noexcept<get_event_mapping_t<get_generic_t<TEvent>, mappings>>(event, deps, subs, has_exceptions{});
+    const auto handled = process_event_noexcept<get_event_mapping_t<get_generic_t<TEvent>, default_mappings, mappings>>(
+        event, deps, subs, has_exceptions{});
 #else
-    const auto handled = process_event_impl(event, deps, subs, get_event_mapping_t<get_generic_t<TEvent>, mappings>{},
-                                            aux::make_index_sequence<regions>{});
+    const auto handled =
+        process_event_impl(event, deps, subs, get_event_mapping_t<get_generic_t<TEvent>, default_mappings, mappings>{},
+                           aux::make_index_sequence<regions>{});
 #endif
     process_internal_events(anonymous{}, deps, subs);
     process_defer_events(deps, subs, handled, aux::type<defer_queue_t<TEvent>>{}, events_t{});
@@ -973,10 +984,11 @@ struct sm_impl {
   bool process_internal_events(const TEvent &event, TDeps &deps, TSubs &subs) {
     log_process_event<sm_t>(aux::type<logger_t>{}, deps, event);
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
-    return process_event_noexcept<get_event_mapping_t<get_generic_t<TEvent>, mappings>>(event, deps, subs, has_exceptions{});
+    return process_event_noexcept<get_event_mapping_t<get_generic_t<TEvent>, default_mappings, mappings>>(event, deps, subs,
+                                                                                                          has_exceptions{});
 #else
-    return process_event_impl<get_event_mapping_t<get_generic_t<TEvent>, mappings>>(event, deps, subs, states_t{},
-                                                                                    aux::make_index_sequence<regions>{});
+    return process_event_impl(event, deps, subs, get_event_mapping_t<get_generic_t<TEvent>, default_mappings, mappings>{},
+                              aux::make_index_sequence<regions>{});
 #endif
   }
   template <class TEvent, class TDeps, class TSubs,
@@ -984,10 +996,11 @@ struct sm_impl {
   bool process_internal_events(const TEvent &event, TDeps &deps, TSubs &subs) {
     log_process_event<sm_t>(aux::type<logger_t>{}, deps, event);
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
-    return process_event_noexcept<get_event_mapping_t<get_mapped_t<TEvent>, mappings>>(event, deps, subs, has_exceptions{});
+    return process_event_noexcept<get_event_mapping_t<get_mapped_t<TEvent>, default_mappings, mappings>>(event, deps, subs,
+                                                                                                         has_exceptions{});
 #else
-    return process_event_impl<get_event_mapping_t<get_mapped_t<TEvent>, mappings>>(event, deps, subs, states_t{},
-                                                                                   aux::make_index_sequence<regions>{});
+    return process_event_impl(event, deps, subs, get_event_mapping_t<get_mapped_t<TEvent>, default_mappings, mappings>{},
+                              aux::make_index_sequence<regions>{});
 #endif
   }
   template <class TEvent, class TDeps, class TSubs,
@@ -1002,11 +1015,11 @@ struct sm_impl {
   bool process_internal_event(const TEvent &event, TDeps &deps, TSubs &subs, state_t &current_state) {
     log_process_event<sm_t>(aux::type<logger_t>{}, deps, event);
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
-    return process_event_noexcept<get_event_mapping_t<get_generic_t<TEvent>, mappings>>(event, deps, subs, current_state,
-                                                                                        has_exceptions{});
+    return process_event_noexcept<get_event_mapping_t<get_generic_t<TEvent>, default_mappings, mappings>>(
+        event, deps, subs, current_state, has_exceptions{});
 #else
-    return process_event_impl<get_event_mapping_t<get_generic_t<TEvent>, mappings>>(event, deps, subs, states_t{},
-                                                                                    current_state);
+    return process_event_impl(event, deps, subs, get_event_mapping_t<get_generic_t<TEvent>, default_mappings, mappings>{},
+                              current_state);
 #endif
   }
   template <class TEvent, class TDeps, class TSubs,
@@ -1014,10 +1027,11 @@ struct sm_impl {
   bool process_internal_event(const TEvent &event, TDeps &deps, TSubs &subs, state_t &current_state) {
     log_process_event<sm_t>(aux::type<logger_t>{}, deps, event);
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
-    return process_event_noexcept<get_event_mapping_t<get_mapped_t<TEvent>, mappings>>(event, deps, subs, current_state,
-                                                                                       has_exceptions{});
+    return process_event_noexcept<get_event_mapping_t<get_mapped_t<TEvent>, default_mappings, mappings>>(
+        event, deps, subs, current_state, has_exceptions{});
 #else
-    return process_event_impl(event, deps, subs, get_event_mapping_t<get_mapped_t<TEvent>, mappings>{}, current_state);
+    return process_event_impl(event, deps, subs, get_event_mapping_t<get_mapped_t<TEvent>, default_mappings, mappings>{},
+                              current_state);
 #endif
   }
   template <class TEvent, class TDeps, class TSubs, class... Ts>
@@ -1099,10 +1113,11 @@ struct sm_impl {
     const auto &event = *static_cast<const TEvent *>(data);
     log_process_event<sm_t>(aux::type<logger_t>{}, deps, event);
 #if defined(__cpp_exceptions) || defined(__EXCEPTIONS)
-    const auto handled = process_event_noexcept<get_event_mapping_t<TEvent, mappings>>(event, deps, subs, has_exceptions{});
+    const auto handled =
+        process_event_noexcept<get_event_mapping_t<TEvent, default_mappings, mappings>>(event, deps, subs, has_exceptions{});
 #else
-    const auto handled = process_event_impl<get_event_mapping_t<TEvent, mappings>>(event, deps, subs, states_t{},
-                                                                                   aux::make_index_sequence<regions>{});
+    const auto handled = process_event_impl(event, deps, subs, get_event_mapping_t<TEvent, default_mappings, mappings>{},
+                                            aux::make_index_sequence<regions>{});
 #endif
     if (handled) {
       defer_.pop();

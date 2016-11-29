@@ -13,6 +13,9 @@ namespace aux {
 
 using swallow = int[];
 
+template <class, class U>
+using expand_t = U;
+
 template <int...>
 struct index_sequence {
   using type = index_sequence;

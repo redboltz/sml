@@ -99,48 +99,60 @@ struct unique_mappings : unique_mappings_impl<aux::type<aux::none_type, aux::inh
 template <class T>
 struct unique_mappings<T> : aux::inherit<T> {};
 
-template <class>
-transitions<aux::true_type> get_event_mapping_impl(...);
+template <class, class TDefault>
+TDefault get_event_mapping_impl(...);
 
-template <class T, class TMappings>
+template <class T, class, class TMappings>
 TMappings get_event_mapping_impl(event_mappings<T, TMappings> *);
 
-template <class T, class TMappings>
-using get_event_mapping_t = decltype(get_event_mapping_impl<T>((TMappings *)0));
+template <class T, class TDefault, class TMappings>
+using get_event_mapping_t = decltype(get_event_mapping_impl<T, TDefault>((TMappings *)0));
 
 template <class, class, class>
 struct mappings;
 
-template<class, class, class>
+template <class, class, class>
 struct remap;
 
-template<class TUnexpected, class, class, class>
+template <class TUnexpected, class, class, class>
 struct get_transition {
   using type = back::transitions<TUnexpected>;
 };
 
-template<class TUnexpected, class TState, class... Ts>
+template <class TUnexpected, class TState, class... Ts>
 struct get_transition<TUnexpected, TState, TState, aux::type_list<Ts...>> {
   using type = back::transitions<Ts...>;
 };
 
-template<class TUnexpected, class TState, class... Ts>
+template <class TUnexpected, class TState, class... Ts>
 struct get_transition<TUnexpected, sm<TState>, sm<TState>, aux::type_list<Ts...>> {
   using type = back::transitions_sub<sm<TState>, Ts...>;
 };
 
-template<class TUnexpected, class... TStates, class TState, class Ts>
+template <class TUnexpected, class... TStates, class TState, class Ts>
 struct remap<TUnexpected, aux::type_list<TStates...>, back::state_mappings<TState, Ts>> {
   using type = aux::type_list<typename get_transition<TUnexpected, TStates, TState, Ts>::type...>;
 };
 
 template <class TUnexpected, class... Ts, class TStates>
 struct mappings<TUnexpected, aux::pool<Ts...>, TStates>
-    : back::unique_mappings_t<
-          back::event_mappings<typename Ts::event, typename remap<TUnexpected, TStates, typename back::state_mappings<typename Ts::src_state, aux::type_list<Ts>>>::type>...> {};
+    : back::unique_mappings_t<back::event_mappings<
+          typename Ts::event, typename remap<TUnexpected, TStates, typename back::state_mappings<
+                                                                       typename Ts::src_state, aux::type_list<Ts>>>::type>...> {
+};
 
 template <class TUnexpected, class Ts, class TStates>
 using mappings_t = typename mappings<TUnexpected, Ts, TStates>::type;
+
+template <class, class>
+struct default_mappings;
+
+template <class TUnexpected, class... TStates>
+struct default_mappings<TUnexpected, aux::type_list<TStates...>>
+    : aux::type_list<aux::expand_t<TStates, transitions<TUnexpected>>...> {};
+
+template <class TUnexpected, class TStates>
+using default_mappings_t = typename default_mappings<TUnexpected, TStates>::type;
 
 }  // back
 
